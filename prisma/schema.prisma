@@ -1,0 +1,153 @@
+generator client {
+  provider = "prisma-client-js"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+enum Role {
+  PEMUDA
+  MENTOR
+  ADMIN
+}
+
+enum OpportunityType {
+  JOB
+  TRAINING
+  FUNDING
+}
+
+enum MentorshipStatus {
+  REQUESTED
+  ACCEPTED
+  DONE
+}
+
+enum SavedItemType {
+  CAREER
+  OPPORTUNITY
+  PROJECT
+}
+
+model User {
+  id         String    @id @default(uuid())
+  name       String
+  email      String    @unique
+  password   String?
+  provider      String    @default("manual")
+  googleId      String?   @unique
+  emailVerified Boolean   @default(false)
+  role       Role      @default(PEMUDA)
+  bio        String?
+  location   String?
+  avatarUrl  String?
+  phone      String?
+  createdAt  DateTime  @default(now())
+
+  // Relations
+  careerPaths       CareerPath[]
+  opportunities     Opportunity[]
+  mentorshipsAsMentee MentorshipSession[] @relation("menteeSessions")
+  mentorshipsAsMentor MentorshipSession[] @relation("mentorSessions")
+  aiProfile         AIProfile?
+  showcaseProjects  ShowcaseProject[]
+  savedItems        SavedItem[]
+  PasswordResetToken PasswordResetToken[]
+
+  @@map("users")
+}
+
+model CareerPath {
+  id          String    @id @default(uuid())
+  title       String
+  description String
+  tags        String[]
+  createdById String
+  createdBy   User      @relation(fields: [createdById], references: [id])
+  opportunities Opportunity[]
+
+  @@map("career_paths")
+}
+
+model Opportunity {
+  id           String          @id @default(uuid())
+  title        String
+  type         OpportunityType
+  description  String
+  link         String?
+  location     String?
+  createdById  String
+  createdBy    User            @relation(fields: [createdById], references: [id])
+  tags         String[]
+  careerPathId String? 
+  careerPath   CareerPath?     @relation(fields: [careerPathId], references: [id])
+  createdAt    DateTime        @default(now())
+
+  @@map("opportunities")
+}
+
+model MentorshipSession {
+  id          String           @id @default(uuid())
+  menteeId    String
+  mentorId    String
+  mentee      User             @relation("menteeSessions", fields: [menteeId], references: [id])
+  mentor      User             @relation("mentorSessions", fields: [mentorId], references: [id])
+  topic       String
+  scheduleTime DateTime
+  status      MentorshipStatus @default(REQUESTED)
+  feedback    String?
+
+  @@map("mentorship_sessions")
+}
+
+model AIProfile {
+  id               String   @id @default(uuid())
+  userId           String   @unique
+  user             User     @relation(fields: [userId], references: [id])
+  interests        String[]
+  skills           String[]
+  aspirations      String?
+  recommendedPaths String[]  // Menyimpan UUID CareerPath sebagai string array
+  updatedAt        DateTime @updatedAt
+
+  @@map("ai_profiles")
+}
+
+model ShowcaseProject {
+  id          String   @id @default(uuid())
+  userId      String
+  user        User     @relation(fields: [userId], references: [id])
+  title       String
+  description String
+  imageUrl    String?
+  sdgTags     String[]
+  createdAt   DateTime @default(now())
+
+  @@map("showcase_projects")
+}
+
+model SavedItem {
+  id        String        @id @default(uuid())
+  userId    String
+  user      User          @relation(fields: [userId], references: [id])
+  itemType  SavedItemType
+  itemId    String        // UUID fleksibel untuk career, opportunity, project
+  savedAt   DateTime      @default(now())
+
+  @@map("saved_items")
+}
+
+model PasswordResetToken {
+  id        String   @id @default(uuid())
+  token     String   @unique
+  userId    String
+  user      User     @relation(fields: [userId], references: [id])
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  @@map("password_reset_tokens")
+}

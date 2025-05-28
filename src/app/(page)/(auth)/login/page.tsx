@@ -18,9 +18,26 @@ export default function LoginPage() {
   const { notification, showSuccess, showError, hideNotification } =
     useNotification();
   const searchParams = useSearchParams();
+  const error = searchParams.get("error");
 
   const { isAuthenticated, loading } = useAuth();
   const router = useRouter();
+
+  useEffect(() => {
+    if (error === "account_exists") {
+      showError(
+        "Akun Sudah Terdaftar",
+        "Akun Google Anda sudah terdaftar, silakan login dengan metode yang sesuai."
+      );
+    }
+    if (error === "account_exists_different_provider") {
+      showError(
+        "Akun Sudah Terdaftar",
+        "Akun Anda sudah terdaftar dengan metode yang berbeda. Silakan login dengan metode yang sesuai."
+      );
+    }
+    
+  }, [error, showError]);
 
   useEffect(() => {
     if (!loading && isAuthenticated) {

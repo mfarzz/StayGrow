@@ -57,6 +57,8 @@ model User {
   showcaseProjects  ShowcaseProject[]
   savedItems        SavedItem[]
   PasswordResetToken PasswordResetToken[]
+  projectLikes      ProjectLike[]
+  projectViews      ProjectView[]
 
   @@map("users")
 }
@@ -125,9 +127,48 @@ model ShowcaseProject {
   description String
   imageUrl    String?
   sdgTags     String[]
-  createdAt   DateTime @default(now())
+  techTags    String[]  // New: Technical tags
+  featured    Boolean   @default(false)  // New: Featured project flag
+  aiMatchScore Int?     // New: AI calculated match score for current user
+  githubUrl   String?   // New: Github repository link
+  demoUrl     String?   // New: Live demo link
+  status      String    @default("PUBLISHED") // New: DRAFT, PUBLISHED, ARCHIVED
+  viewCount   Int       @default(0)  // New: View counter
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  // Relations
+  likes       ProjectLike[]
+  views       ProjectView[]
+  savedItems  SavedItem[]   // Projects can be saved by users
 
   @@map("showcase_projects")
+}
+
+// New: Project likes tracking
+model ProjectLike {
+  id        String   @id @default(uuid())
+  userId    String
+  projectId String
+  user      User     @relation(fields: [userId], references: [id])
+  project   ShowcaseProject @relation(fields: [projectId], references: [id])
+  createdAt DateTime @default(now())
+
+  @@unique([userId, projectId])
+  @@map("project_likes")
+}
+
+// New: Project views tracking
+model ProjectView {
+  id        String   @id @default(uuid())
+  userId    String?  // Nullable for anonymous views
+  projectId String
+  ipAddress String?  // For anonymous tracking
+  user      User?    @relation(fields: [userId], references: [id])
+  project   ShowcaseProject @relation(fields: [projectId], references: [id])
+  viewedAt  DateTime @default(now())
+
+  @@map("project_views")
 }
 
 model SavedItem {
@@ -136,6 +177,7 @@ model SavedItem {
   user      User          @relation(fields: [userId], references: [id])
   itemType  SavedItemType
   itemId    String        // UUID fleksibel untuk career, opportunity, project
+  project   ShowcaseProject? @relation(fields: [itemId], references: [id]) // New relation for projects
   savedAt   DateTime      @default(now())
 
   @@map("saved_items")

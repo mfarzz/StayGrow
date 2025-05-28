@@ -56,6 +56,13 @@ export async function GET(req: NextRequest) {
 
     if (user) {
       // User exists
+      if( user.provider === 'google'){
+        if (state === 'register') {
+          return NextResponse.redirect(
+            `${process.env.NEXTAUTH_URL}/login?error=account_exists`
+          );
+        }
+      }
       if (user.provider === 'manual') {
         if (state === 'register') {
           // Upgrade manual account to Google

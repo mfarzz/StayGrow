@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import jwt from 'jsonwebtoken';
+import prisma from '@/lib/prisma';
 
 export async function GET(req: NextRequest) {
   try {
@@ -9,7 +10,25 @@ export async function GET(req: NextRequest) {
     const decoded = jwt.verify(token, process.env.JWT_SECRET || 'your-secret-key');
 
     if (typeof decoded === 'object' && decoded && 'userId' in decoded) {
-      return NextResponse.json({ userId: decoded.userId });
+      // Fetch user data from database to get latest role and other info
+      const user = await prisma.user.findUnique({
+        where: { id: decoded.userId as string },
+        select: {
+          id: true,
+          email: true,
+          role: true,
+        },
+      });
+
+      if (!user) {
+        return NextResponse.json({ error: 'User not found' }, { status: 404 });
+      }
+
+      return NextResponse.json({ 
+        userId: user.id,
+        email: user.email,
+        role: user.role
+      });
     } else {
       return NextResponse.json({ error: 'Invalid token payload' }, { status: 401 });
     }

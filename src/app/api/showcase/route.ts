@@ -15,6 +15,7 @@ export async function GET(request: NextRequest) {
     const limit = parseInt(searchParams.get('limit') || '9');
     const sortBy = searchParams.get('sortBy') || 'newest';
     const userId = searchParams.get('userId') || ''; // Add userId parameter
+    const status = searchParams.get('status') || 'PUBLISHED'; // Add status parameter
     
     // Get current user ID for liked/bookmarked filters
     let currentUserId: string | null = null;
@@ -36,7 +37,7 @@ export async function GET(request: NextRequest) {
     // Build where conditions
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const whereConditions: any = {
-      status: 'PUBLISHED', // Only show published projects
+      status: status, // Use the status parameter, defaults to 'PUBLISHED'
     };
 
     // Filter by specific user if userId is provided
@@ -44,14 +45,10 @@ export async function GET(request: NextRequest) {
       whereConditions.userId = userId;
     }
     
-    // Search filter
+    // Search filter - we'll handle this with raw SQL for better array searching
     if (search) {
-      whereConditions.OR = [
-        { title: { contains: search, mode: 'insensitive' } },
-        { description: { contains: search, mode: 'insensitive' } },
-        { user: { name: { contains: search, mode: 'insensitive' } } },
-        { techTags: { has: search } },
-      ];
+      // We'll use raw SQL for the search to enable partial matching in arrays
+      // The whereConditions will be handled in the raw query below
     }
     
     // Featured filter
@@ -98,44 +95,189 @@ export async function GET(request: NextRequest) {
         break;
     }
     
-    // Get projects with relations
-    const projects = await prisma.showcaseProject.findMany({
-      where: whereConditions,
-      include: {
-        user: {
-          select: {
-            id: true,
-            name: true,
-            role: true,
-            location: true,
-            avatarUrl: true,
+    // Execute query based on whether we have a search term
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    let projects: any[];
+    let totalCount: number;
+
+    if (search) {
+      // Use raw SQL for better search capabilities with partial matching
+      const searchPattern = `%${search.toLowerCase()}%`;
+      
+      // Build base SQL query
+      let baseQuery = `
+        FROM "showcase_projects" sp
+        LEFT JOIN "users" u ON sp."userId" = u.id
+        WHERE sp.status = $2
+        AND (
+          LOWER(sp.title) LIKE $1
+          OR LOWER(sp.description) LIKE $1
+          OR LOWER(u.name) LIKE $1
+          OR EXISTS (
+            SELECT 1 FROM unnest(sp."techTags") AS tag WHERE LOWER(tag) LIKE $1
+          )
+          OR EXISTS (
+            SELECT 1 FROM unnest(sp."sdgTags") AS tag WHERE LOWER(tag) LIKE $1
+          )
+        )
+      `;
+      
+      const params: (string | number | boolean)[] = [searchPattern, status];
+      let paramIndex = 3;
+      
+      // Add additional filters
+      if (userId) {
+        baseQuery += ` AND sp."userId" = $${paramIndex}`;
+        params.push(userId);
+        paramIndex++;
+      }
+      
+      if (sdg !== 'all') {
+        baseQuery += ` AND $${paramIndex} = ANY(sp."sdgTags")`;
+        params.push(`SDG ${sdg}`);
+        paramIndex++;
+      }
+      
+      if (filter === 'featured') {
+        baseQuery += ` AND sp.featured = $${paramIndex}`;
+        params.push(true);
+        paramIndex++;
+      }
+      
+      if (filter === 'ai-match') {
+        baseQuery += ` AND sp."aiMatchScore" >= $${paramIndex}`;
+        params.push(85);
+        paramIndex++;
+      }
+      
+      // For liked and bookmarked filters, we'll handle them in Prisma after getting IDs
+      
+      // Get project IDs first
+      const projectIdsQuery = `SELECT sp.id ${baseQuery} ORDER BY sp."createdAt" DESC`;
+      const projectIdResults = await prisma.$queryRawUnsafe(projectIdsQuery, ...params) as { id: string }[];
+      const projectIds = projectIdResults.map(p => p.id);
+      
+      if (projectIds.length === 0) {
+        projects = [];
+        totalCount = 0;
+      } else {
+        // Build final where condition for Prisma
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const finalWhereConditions: any = {
+          id: { in: projectIds },
+          status: status,
+        };
+        
+        // Apply user-specific filters
+        if (filter === 'liked' && currentUserId) {
+          finalWhereConditions.likes = { some: { userId: currentUserId } };
+        }
+        
+        if (filter === 'bookmarked' && currentUserId) {
+          finalWhereConditions.savedItems = { some: { userId: currentUserId, itemType: 'PROJECT' } };
+        }
+        
+        // Get filtered project IDs if needed
+        let filteredProjectIds = projectIds;
+        if ((filter === 'liked' || filter === 'bookmarked') && currentUserId) {
+          const filteredResults = await prisma.showcaseProject.findMany({
+            where: finalWhereConditions,
+            select: { id: true },
+          });
+          filteredProjectIds = filteredResults.map(p => p.id);
+        }
+        
+        // Get total count
+        totalCount = filteredProjectIds.length;
+        
+        // Apply pagination to filtered IDs
+        const paginatedIds = filteredProjectIds.slice(offset, offset + limit);
+        
+        if (paginatedIds.length === 0) {
+          projects = [];
+        } else {
+          // Get full project data with proper sorting
+          projects = await prisma.showcaseProject.findMany({
+            where: {
+              id: { in: paginatedIds },
+            },
+            include: {
+              user: {
+                select: {
+                  id: true,
+                  name: true,
+                  role: true,
+                  location: true,
+                  avatarUrl: true,
+                },
+              },
+              likes: currentUserId ? {
+                where: { userId: currentUserId },
+                select: { id: true },
+              } : { select: { id: true } },
+              savedItems: currentUserId ? {
+                where: { userId: currentUserId, itemType: 'PROJECT' },
+                select: { id: true },
+              } : { select: { id: true } },
+              _count: {
+                select: {
+                  likes: true,
+                  views: true,
+                  savedItems: true,
+                },
+              },
+            },
+            orderBy,
+          });
+          
+          // Maintain the order from our search results
+          const orderedProjects = paginatedIds.map(id => 
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            projects.find((p: any) => p.id === id)
+          ).filter(Boolean);
+          projects = orderedProjects;
+        }
+      }
+    } else {
+      // No search query, use regular Prisma query
+      projects = await prisma.showcaseProject.findMany({
+        where: whereConditions,
+        include: {
+          user: {
+            select: {
+              id: true,
+              name: true,
+              role: true,
+              location: true,
+              avatarUrl: true,
+            },
+          },
+          likes: currentUserId ? {
+            where: { userId: currentUserId },
+            select: { id: true },
+          } : { select: { id: true } },
+          savedItems: currentUserId ? {
+            where: { userId: currentUserId, itemType: 'PROJECT' },
+            select: { id: true },
+          } : { select: { id: true } },
+          _count: {
+            select: {
+              likes: true,
+              views: true,
+              savedItems: true,
+            },
           },
         },
-        likes: currentUserId ? {
-          where: { userId: currentUserId },
-          select: { id: true },
-        } : { select: { id: true } },
-        savedItems: currentUserId ? {
-          where: { userId: currentUserId, itemType: 'PROJECT' },
-          select: { id: true },
-        } : { select: { id: true } },
-        _count: {
-          select: {
-            likes: true,
-            views: true,
-            savedItems: true,
-          },
-        },
-      },
-      orderBy,
-      skip: offset,
-      take: limit,
-    });
-    
-    // Get total count for pagination
-    const totalCount = await prisma.showcaseProject.count({
-      where: whereConditions,
-    });
+        orderBy,
+        skip: offset,
+        take: limit,
+      });
+      
+      // Get total count for pagination
+      totalCount = await prisma.showcaseProject.count({
+        where: whereConditions,
+      });
+    }
     
     // Transform data to match frontend expectations
     const transformedProjects = projects.map((project) => ({

@@ -33,6 +33,12 @@ enum SavedItemType {
   PROJECT
 }
 
+enum MentorApplicationStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
 model User {
   id         String    @id @default(uuid())
   name       String
@@ -59,6 +65,7 @@ model User {
   PasswordResetToken PasswordResetToken[]
   projectLikes      ProjectLike[]
   projectViews      ProjectView[]
+  mentorApplication MentorApplication?
 
   @@map("users")
 }
@@ -192,4 +199,31 @@ model PasswordResetToken {
   createdAt DateTime @default(now())
 
   @@map("password_reset_tokens")
+}
+
+model MentorApplication {
+  id               String                  @id @default(uuid())
+  userId           String                  @unique
+  user             User                    @relation(fields: [userId], references: [id])
+  
+  // Application Details
+  motivation       String                  // Why they want to become a mentor
+  experience       String                  // Their relevant experience
+  expertise        String[]                // Areas of expertise
+  availableHours   Int                     // Hours per week available for mentoring
+  linkedinUrl      String?                 // Optional LinkedIn profile
+  portfolioUrl     String?                 // Optional portfolio/website
+  education        String?                 // Educational background
+  currentPosition  String?                 // Current job position
+  
+  // Application Status
+  status           MentorApplicationStatus @default(PENDING)
+  adminNotes       String?                 // Admin comments on the application
+  reviewedBy       String?                 // Admin ID who reviewed the application
+  reviewedAt       DateTime?               // When the application was reviewed
+  
+  createdAt        DateTime                @default(now())
+  updatedAt        DateTime                @updatedAt
+
+  @@map("mentor_applications")
 }

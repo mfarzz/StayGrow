@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import {
   Heart as HeartIcon,
   Clock as ClockIcon,
@@ -8,23 +8,100 @@ import {
   Briefcase as BriefcaseIcon,
   ChevronRight,
   Plus,
+  UserPlus,
+  Star,
+  ArrowRight,
 } from "lucide-react";
 
 import StatCard from "../../_components/statCard"; // Adjust path as needed
 import RecommendationCard from "../../_components/recomendationCard"; // Adjust path as needed
 import MentorshipCard from "../../_components/mentorShipCard"; // Adjust path as needed
-import ProjectCard from "../../_components/projectCard"; // Adjust path as needed
+import { InteractiveProjectCard } from "../../_components/interactiveProjectCard";
 import { useProfile } from "../../_hooks/useProfile"; // Adjust path as needed
 import useShowcase from "../../_hooks/useShowcase"; // Adjust path as needed
+import { useShowcaseActions } from "../../_hooks/useShowcaseActions";
+import { useAuth } from "../../_hooks/useAuth";
+import { useMentorApplication } from "../../_hooks/useMentorApplication";
+import { useRouter } from "next/navigation";
 
 export default function DashboardPage() {
-  const { profile } = useProfile();
+  const router = useRouter();
+  const { role } = useAuth();
+  const { profile, loading: profileLoading } = useProfile();
+  const { application: mentorApplication, canApply } = useMentorApplication();
   const { 
     loading: showcaseLoading, 
     error: showcaseError, 
     projects: showcaseProjects, 
     fetchProjects 
   } = useShowcase();
+
+  const { fetchUserStates } = useShowcaseActions();
+
+  // Calculate profile completion percentage
+  const profileCompletion = useMemo(() => {
+    if (!profile) return 0;
+
+    const fields = [
+      { field: "name", weight: 20 },
+      { field: "bio", weight: 20 },
+      { field: "location", weight: 15 },
+      { field: "phone", weight: 15 },
+      { field: "avatarUrl", weight: 20 },
+      { field: "email", weight: 10 }, // Usually always present
+    ];
+
+    let totalWeight = 0;
+    let completedWeight = 0;
+
+    fields.forEach(({ field, weight }) => {
+      totalWeight += weight;
+      const value = profile[field as keyof typeof profile];
+
+      if (value && typeof value === "string" && value.trim().length > 0) {
+        completedWeight += weight;
+      }
+    });
+
+    return Math.round((completedWeight / totalWeight) * 100);
+  }, [profile]);
+
+  // Get completion status for display
+  const getCompletionStatus = (percentage: number) => {
+    if (percentage >= 90)
+      return { text: "Sangat Lengkap", color: "text-green-600" };
+    if (percentage >= 70)
+      return { text: "Cukup Lengkap", color: "text-blue-600" };
+    if (percentage >= 50)
+      return { text: "Perlu Dilengkapi", color: "text-yellow-600" };
+    return { text: "Belum Lengkap", color: "text-red-600" };
+  };
+
+  const completionStatus = getCompletionStatus(profileCompletion);
+
+  // Navigate to profile page for editing
+  const handleProfileEdit = () => {
+    router.push('/home/profile');
+  };
+
+  // Initialize user states when projects are loaded
+  useEffect(() => {
+    if (showcaseProjects.length > 0) {
+      const projectIds = showcaseProjects.map(project => project.id);
+      fetchUserStates(projectIds);
+    }
+  }, [showcaseProjects, fetchUserStates]);
+
+  // State update handler for interactive project cards
+  const handleProjectUpdate = (projectId: string, updates: Partial<{
+    likes: number;
+    saves: number;
+    views: number;
+    isLiked: boolean;
+    isBookmarked: boolean;
+  }>) => {
+    console.log('Project updated:', projectId, updates);
+  };
 
   const [quickStats] = useState({
     appliedJobs: 12,
@@ -112,12 +189,44 @@ export default function DashboardPage() {
             </p>
           </div>
           <div className="lg:block">
-            <div className="bg-white/20 backdrop-blur-sm rounded-xl p-4 w-fit">
-              <div className="text-center">
-                <div className="text-2xl font-bold">75</div>
-                <div className="text-sm text-emerald-100">Profil Lengkap</div>
+            {profileLoading ? (
+              <div className="bg-white/20 backdrop-blur-sm rounded-xl p-4 min-w-[120px]">
+                <div className="text-center">
+                  <div className="h-8 bg-white/20 rounded animate-pulse mb-1"></div>
+                  <div className="h-4 bg-white/20 rounded animate-pulse mb-2"></div>
+                  <div className="w-full bg-white/20 rounded-full h-2 mb-2 animate-pulse"></div>
+                  <div className="h-3 bg-white/20 rounded animate-pulse"></div>
+                </div>
               </div>
-            </div>
+            ) : (
+              <button 
+                onClick={handleProfileEdit}
+                className="bg-white/20 backdrop-blur-sm rounded-xl p-4 min-w-[120px] hover:bg-white/30 transition-all duration-200 cursor-pointer"
+              >
+                <div className="text-center">
+                  <div className="text-2xl font-bold mb-1">{profileCompletion}%</div>
+                  <div className="text-sm text-emerald-100 mb-2">Profil Lengkap</div>
+                  
+                  {/* Progress Bar */}
+                  <div className="w-full bg-white/20 rounded-full h-2 mb-2">
+                    <div 
+                      className="bg-white h-2 rounded-full transition-all duration-300"
+                      style={{ width: `${profileCompletion}%` }}
+                    ></div>
+                  </div>
+                  
+                  <div className="text-xs text-emerald-100/80">
+                    {completionStatus.text}
+                  </div>
+                  
+                  {profileCompletion < 90 && (
+                    <div className="text-xs text-emerald-100/70 mt-1">
+                      Klik untuk edit
+                    </div>
+                  )}
+                </div>
+              </button>
+            )}
           </div>
         </div>
       </div>
@@ -149,6 +258,77 @@ export default function DashboardPage() {
           color="green"
         />
       </div>
+
+      {/* Mentor Application CTA - Only for PEMUDA who haven't applied */}
+      {role === 'PEMUDA' && canApply() && (
+        <div className="bg-gradient-to-r from-blue-500 to-indigo-600 rounded-xl lg:rounded-2xl p-6 lg:p-8 text-white">
+          <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
+            <div className="flex-1">
+              <div className="flex items-center gap-3 mb-3">
+                <div className="bg-white/20 p-2 rounded-lg">
+                  <Star className="h-6 w-6 text-white" />
+                </div>
+                <h3 className="text-xl lg:text-2xl font-bold">Jadi Mentor StayGrow</h3>
+              </div>
+              <p className="text-blue-100 text-base lg:text-lg mb-2">
+                Bagikan pengalaman dan keahlian Anda untuk membantu pemuda lain berkembang
+              </p>
+              <p className="text-blue-200 text-sm">
+                ✨ Bangun jaringan profesional • 🎯 Tingkatkan leadership skills • 💡 Berkontribusi untuk masa depan
+              </p>
+            </div>
+            <div className="lg:block">
+              <button
+                onClick={() => router.push('/home/mentor-application')}
+                className="bg-white text-blue-600 px-6 py-3 rounded-xl font-semibold hover:bg-blue-50 transition-all duration-200 flex items-center gap-3 min-w-fit"
+              >
+                <UserPlus size={20} />
+                <span>Ajukan Sekarang</span>
+                <ArrowRight size={16} />
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Show mentor application status for PEMUDA who already applied */}
+      {role === 'PEMUDA' && mentorApplication && (
+        <div className="bg-white rounded-xl lg:rounded-2xl shadow-sm border border-gray-200 p-6 lg:p-8">
+          <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
+            <div className="flex-1">
+              <div className="flex items-center gap-3 mb-3">
+                <div className="bg-emerald-100 p-2 rounded-lg">
+                  <UserPlus className="h-6 w-6 text-emerald-600" />
+                </div>
+                <h3 className="text-xl lg:text-2xl font-bold text-gray-900">Status Pengajuan Mentor</h3>
+              </div>
+              <p className="text-gray-600 mb-2">
+                Pengajuan Anda telah diterima dan sedang dalam proses review
+              </p>
+              <div className="flex items-center gap-2">
+                <span className="text-sm text-gray-500">Status:</span>
+                <span className={`px-3 py-1 rounded-full text-sm font-medium ${
+                  mentorApplication.status === 'PENDING' ? 'bg-yellow-100 text-yellow-800' :
+                  mentorApplication.status === 'APPROVED' ? 'bg-green-100 text-green-800' :
+                  'bg-red-100 text-red-800'
+                }`}>
+                  {mentorApplication.status === 'PENDING' ? 'Menunggu Review' :
+                   mentorApplication.status === 'APPROVED' ? 'Disetujui' : 'Ditolak'}
+                </span>
+              </div>
+            </div>
+            <div className="lg:block">
+              <button
+                onClick={() => router.push('/home/mentor-application')}
+                className="bg-emerald-600 text-white px-6 py-3 rounded-xl font-semibold hover:bg-emerald-700 transition-all duration-200 flex items-center gap-3 min-w-fit"
+              >
+                <span>Lihat Detail</span>
+                <ArrowRight size={16} />
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* AI Recommendations */}
       <div className="bg-white rounded-xl lg:rounded-2xl shadow-sm p-4 lg:p-6">
@@ -190,7 +370,7 @@ export default function DashboardPage() {
           <h3 className="text-xl lg:text-2xl font-bold text-gray-900">
             Showcase Proyek Inovatif
           </h3>
-          <button className="text-emerald-600 hover:text-emerald-700 font-medium flex items-center gap-2 w-fit">
+          <button className="text-emerald-600 hover:text-emerald-700 font-medium flex items-center gap-2 w-fit" onClick={() => router.push('/home/showcase')}>
             Jelajahi Semua <ChevronRight size={16}/>
           </button>
         </div>
@@ -217,7 +397,11 @@ export default function DashboardPage() {
         ) : showcaseProjects.length > 0 ? (
           <div className="grid lg:grid-cols-2 gap-4 lg:gap-6">
             {showcaseProjects.map((project) => (
-              <ProjectCard key={project.id} project={project} />
+              <InteractiveProjectCard 
+                key={project.id} 
+                project={project}
+                onProjectUpdate={handleProjectUpdate}
+              />
             ))}
           </div>
         ) : (

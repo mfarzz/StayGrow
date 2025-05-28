@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo, useEffect } from "react";
+import { useState, useMemo, useEffect, useCallback } from "react";
 import Image from "next/image";
 import { MapPin } from "lucide-react";
 import { useProfile } from "@/app/_hooks/useProfile"; // Adjust path as needed
@@ -23,23 +23,53 @@ export default function ProfilePage() {
     fetchProjects,
     deleteProject 
   } = useShowcase();
+  
+  const [draftProjects, setDraftProjects] = useState<typeof showcaseProjects>([]);
+  const [loadingDrafts, setLoadingDrafts] = useState(false);
   const [isEditProfileOpen, setIsEditProfileOpen] = useState(false);
   const [isAddShowcaseOpen, setIsAddShowcaseOpen] = useState(false);
   const [isManageShowcaseOpen, setIsManageShowcaseOpen] = useState(false);
+  const [activeTab, setActiveTab] = useState<'published' | 'draft'>('published');
+  const [editingProject, setEditingProject] = useState<typeof showcaseProjects[0] | null>(null);
   const { notification, showSuccess, showError, hideNotification } =
     useNotification();
+
+  // Function to fetch draft projects
+  const fetchDraftProjects = useCallback(async () => {
+    if (!profile?.id) return;
+    
+    setLoadingDrafts(true);
+    try {
+      const response = await fetch(`/api/showcase?userId=${profile.id}&status=DRAFT`, {
+        credentials: 'include'
+      });
+      
+      if (response.ok) {
+        const data = await response.json();
+        setDraftProjects(data.projects || []);
+      }
+    } catch (error) {
+      console.error('Error fetching draft projects:', error);
+    } finally {
+      setLoadingDrafts(false);
+    }
+  }, [profile?.id]);
 
   // Fetch user's showcase projects on component mount
   useEffect(() => {
     if (profile?.id) {
+      // Fetch published projects
       fetchProjects({
-        filter: "all", // Get all projects from this user
-        limit: 10, // Show more projects in profile
+        filter: "all",
+        limit: 10,
         sortBy: "newest",
-        userId: profile.id // Filter by current user's ID
+        userId: profile.id
       });
+      
+      // Fetch draft projects
+      fetchDraftProjects();
     }
-  }, [fetchProjects, profile?.id]);
+  }, [fetchProjects, profile?.id, fetchDraftProjects]);
 
   const [upcomingMentorships] = useState([
     {
@@ -124,6 +154,21 @@ export default function ProfilePage() {
       .map(({ label }) => label);
   }, [profile]);
 
+  // Handle project editing
+  const handleEditProject = (project: typeof showcaseProjects[0]) => {
+    // Only allow editing draft projects
+    if (project.status !== 'DRAFT') {
+      showError(
+        "Tidak dapat mengedit proyek",
+        "Hanya proyek dengan status draft yang dapat diedit. Proyek yang sudah dipublikasi tidak dapat diubah."
+      );
+      return;
+    }
+    
+    setEditingProject(project);
+    setIsAddShowcaseOpen(true);
+  };
+
   // State update handler for interactive project cards
   const handleProjectUpdate = (projectId: string, updates: Partial<{
     likes: number;
@@ -164,6 +209,8 @@ export default function ProfilePage() {
           sortBy: "newest",
           userId: profile.id
         });
+        // Also refresh drafts
+        await fetchDraftProjects();
         return { success: true };
       } else {
         showError(
@@ -219,9 +266,14 @@ export default function ProfilePage() {
     status?: string;
   }) => {
     try {
-      // Call your showcase API to create new project
-      const response = await fetch('/api/showcase', {
-        method: 'POST',
+      // Check if we're editing an existing project
+      const isEditing = !!editingProject;
+      const url = isEditing ? `/api/showcase/${editingProject.id}` : '/api/showcase';
+      const method = isEditing ? 'PUT' : 'POST';
+      
+      // Call your showcase API to create or update project
+      const response = await fetch(url, {
+        method: method,
         headers: {
           'Content-Type': 'application/json',
         },
@@ -229,8 +281,9 @@ export default function ProfilePage() {
       });
 
       if (response.ok) {
-        const newProject = await response.json();
+        const updatedProject = await response.json();
         setIsAddShowcaseOpen(false);
+        setEditingProject(null); // Clear editing state
         
         // Refresh the showcase projects
         if (profile?.id) {
@@ -240,23 +293,40 @@ export default function ProfilePage() {
             sortBy: "newest",
             userId: profile.id
           });
+          // Also refresh drafts in case the project was saved as draft
+          fetchDraftProjects();
         }
         
         showSuccess(
-          "Proyek berhasil ditambahkan",
-          "Proyek showcase Anda telah berhasil dibuat"
+          isEditing ? "Proyek berhasil diupdate" : "Proyek berhasil ditambahkan",
+          isEditing ? "Proyek showcase Anda telah berhasil diupdate" : "Proyek showcase Anda telah berhasil dibuat"
         );
         
-        return { success: true, project: newProject };
+        return { success: true, project: updatedProject };
       } else {
-        throw new Error('Failed to create project');
+        const errorData = await response.json();
+        throw new Error(errorData.message || `Failed to ${isEditing ? 'update' : 'create'} project`);
       }
     } catch (error) {
-      console.error("Failed to create showcase project:", error);
-      showError(
-        "Gagal membuat proyek",
-        "Terjadi kesalahan saat membuat proyek showcase"
-      );
+      console.error(`Failed to ${!!editingProject ? 'update' : 'create'} showcase project:`, error);
+      
+      // Handle specific validation errors from server
+      if (error instanceof Error && error.message.includes('Validasi gagal')) {
+        showError(
+          "Validasi gagal",
+          error.message
+        );
+      } else if (error instanceof Error && error.message.includes('Tidak dapat mengedit proyek yang sudah dipublikasi')) {
+        showError(
+          "Tidak dapat mengedit proyek",
+          "Proyek yang sudah dipublikasi tidak dapat diedit. Hanya proyek dengan status draft yang dapat diubah."
+        );
+      } else {
+        showError(
+          !!editingProject ? "Gagal mengupdate proyek" : "Gagal membuat proyek",
+          `Terjadi kesalahan saat ${!!editingProject ? 'mengupdate' : 'membuat'} proyek showcase`
+        );
+      }
       return { success: false };
     }
   };
@@ -411,12 +481,12 @@ export default function ProfilePage() {
               <div className="flex justify-between">
                 <span className="text-gray-600">Proyek Showcase</span>
                 <span className="font-semibold text-black">
-                  {showcaseLoading ? (
+                  {showcaseLoading || loadingDrafts ? (
                     <div className="w-4 h-4 border-2 border-gray-300 border-t-emerald-500 rounded-full animate-spin"></div>
                   ) : showcaseError ? (
                     <span className="text-red-500">Error</span>
                   ) : (
-                    showcaseProjects?.length || 0
+                    `${(showcaseProjects?.length || 0)} total`
                   )}
                 </span>
               </div>
@@ -450,47 +520,115 @@ export default function ProfilePage() {
           </button>
         </div>
         
-        {showcaseLoading ? (
-          <ProjectCardSkeletonGrid count={6} />
-        ) : showcaseError ? (
-          <div className="text-center py-8">
-            <p className="text-red-500 mb-2">Gagal memuat proyek showcase</p>
-            <button
-              onClick={() => fetchProjects({
-                filter: "all",
-                limit: 10,
-                sortBy: "newest",
-                userId: profile?.id || ""
-              })}
-              className="text-emerald-600 hover:text-emerald-700 font-medium"
-            >
-              Coba Lagi
-            </button>
-          </div>
-        ) : showcaseProjects.length > 0 ? (
-          <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4 lg:gap-6">
-            {showcaseProjects.map((project) => (
-              <InteractiveProjectCard 
-                key={project.id} 
-                project={project}
-                onProjectUpdate={handleProjectUpdate}
-              />
-            ))}
-          </div>
-        ) : (
-          <div className="text-center py-12">
-            <div className="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-4">
-              <span className="text-gray-400 text-2xl">📂</span>
+        {/* Tab Navigation */}
+        <div className="flex space-x-1 mb-6 bg-gray-100 p-1 rounded-lg">
+          <button
+            onClick={() => setActiveTab('published')}
+            className={`flex-1 py-2 px-4 rounded-md text-sm font-medium transition-colors ${
+              activeTab === 'published'
+                ? 'bg-white text-gray-900 shadow-sm'
+                : 'text-gray-500 hover:text-gray-700'
+            }`}
+          >
+            Published ({showcaseProjects?.length || 0})
+          </button>
+          <button
+            onClick={() => setActiveTab('draft')}
+            className={`flex-1 py-2 px-4 rounded-md text-sm font-medium transition-colors ${
+              activeTab === 'draft'
+                ? 'bg-white text-gray-900 shadow-sm'
+                : 'text-gray-500 hover:text-gray-700'
+            }`}
+          >
+            Draft ({draftProjects?.length || 0})
+          </button>
+        </div>
+        
+        {/* Content based on active tab */}
+        {activeTab === 'published' ? (
+          showcaseLoading ? (
+            <ProjectCardSkeletonGrid count={6} />
+          ) : showcaseError ? (
+            <div className="text-center py-8">
+              <p className="text-red-500 mb-2">Gagal memuat proyek showcase</p>
+              <button
+                onClick={() => fetchProjects({
+                  filter: "all",
+                  limit: 10,
+                  sortBy: "newest",
+                  userId: profile?.id || ""
+                })}
+                className="text-emerald-600 hover:text-emerald-700 font-medium"
+              >
+                Coba Lagi
+              </button>
             </div>
-            <h4 className="text-lg font-medium text-gray-900 mb-2">Belum ada proyek showcase</h4>
-            <p className="text-gray-500 mb-4">Mulai berkarya dan bagikan proyekmu untuk menginspirasi yang lain</p>
-            <button 
-              onClick={() => setIsAddShowcaseOpen(true)}
-              className="bg-emerald-600 text-white px-6 py-2 rounded-lg hover:bg-emerald-700 transition-colors"
-            >
-              Buat Proyek Pertama
-            </button>
-          </div>
+          ) : showcaseProjects.length > 0 ? (
+            <>
+              <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4 lg:gap-6">
+                {showcaseProjects.map((project) => (
+                  <InteractiveProjectCard 
+                    key={project.id} 
+                    project={project}
+                    onProjectUpdate={handleProjectUpdate}
+                    onEditProject={handleEditProject}
+                  />
+                ))}
+              </div>
+            </>
+          ) : (
+            <div className="text-center py-12">
+              <div className="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                <span className="text-gray-400 text-2xl">📂</span>
+              </div>
+              <h4 className="text-lg font-medium text-gray-900 mb-2">Belum ada proyek published</h4>
+              <p className="text-gray-500 mb-4">Mulai berkarya dan bagikan proyekmu untuk menginspirasi yang lain</p>
+              <button 
+                onClick={() => setIsAddShowcaseOpen(true)}
+                className="bg-emerald-600 text-white px-6 py-2 rounded-lg hover:bg-emerald-700 transition-colors"
+              >
+                Buat Proyek Pertama
+              </button>
+            </div>
+          )
+        ) : (
+          // Draft tab content
+          loadingDrafts ? (
+            <ProjectCardSkeletonGrid count={3} />
+          ) : draftProjects.length > 0 ? (
+            <>
+              <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4 lg:gap-6">
+                {draftProjects.map((project) => (
+                  <div key={project.id } className="relative">
+                    <InteractiveProjectCard 
+                      project={project}
+                      onProjectUpdate={handleProjectUpdate}
+                      onEditProject={handleEditProject}
+                    />
+                    <div className="absolute top-2 right-2">
+                      <span className="bg-yellow-100 text-yellow-800 text-xs font-medium px-2 py-1 rounded-full">
+                        Draft
+                      </span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </>
+          ) : (
+            <div className="text-center py-12">
+              <div className="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                <span className="text-gray-400 text-2xl">📝</span>
+              </div>
+              <h4 className="text-lg font-medium text-gray-900 mb-2">Belum ada draft proyek</h4>
+              <p className="text-gray-500 mb-4">Draft proyek akan disimpan di sini sebelum dipublikasi</p>
+              <button 
+                onClick={() => setIsAddShowcaseOpen(true)}
+                className="bg-emerald-600 text-white px-6 py-2 rounded-lg hover:bg-emerald-700 transition-colors"
+              >
+                Buat Draft Pertama
+              </button>
+            </div>
+          )
         )}
       </div>
       )}
@@ -516,8 +654,12 @@ export default function ProfilePage() {
       {isAddShowcaseOpen && (
         <AddShowcaseModal
           isOpen={isAddShowcaseOpen}
-          onClose={() => setIsAddShowcaseOpen(false)}
+          onClose={() => {
+            setIsAddShowcaseOpen(false);
+            setEditingProject(null); // Clear editing state when modal closes
+          }}
           onSubmit={handleAddShowcase}
+          editingProject={editingProject}
         />
       )}
 
@@ -525,13 +667,15 @@ export default function ProfilePage() {
         <ManageShowcaseModal
           isOpen={isManageShowcaseOpen}
           onClose={() => setIsManageShowcaseOpen(false)}
-          projects={showcaseProjects}
+          projects={[...showcaseProjects, ...draftProjects]}
           onDelete={handleDeleteProjects}
+          onEditProject={handleEditProject}
           onAddNew={() => {
             setIsManageShowcaseOpen(false);
+            setEditingProject(null); // Clear any existing editing state
             setIsAddShowcaseOpen(true);
           }}
-          loading={showcaseLoading}
+          loading={showcaseLoading || loadingDrafts}
         />
       )}
     </div>

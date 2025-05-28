@@ -2,7 +2,6 @@ import React, { useEffect } from "react";
 import Image from "next/image";
 import {
   Heart,
-  MapPin,
   User,
   Calendar,
   Eye,
@@ -10,6 +9,7 @@ import {
   BookmarkPlus,
   Share2,
   ExternalLink,
+  Edit,
 } from "lucide-react";
 import { useShowcaseActions } from "@/app/_hooks/useShowcaseActions";
 import { useAuth } from "@/app/_hooks/useAuth";
@@ -42,11 +42,13 @@ interface ShowcaseProject {
 interface ProjectCardProps {
   project: ShowcaseProject;
   onProjectUpdate?: (projectId: string, updates: Partial<ShowcaseProject>) => void;
+  onEditProject?: (project: ShowcaseProject) => void;
 }
 
 export const InteractiveProjectCard: React.FC<ProjectCardProps> = ({ 
   project, 
-  onProjectUpdate 
+  onProjectUpdate,
+  onEditProject,
 }) => {
   const { userId } = useAuth({ redirectOnFailure: false });
   
@@ -145,10 +147,20 @@ export const InteractiveProjectCard: React.FC<ProjectCardProps> = ({
     }
   };
 
+  const handleEditProject = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (onEditProject) {
+      onEditProject(project);
+    }
+  };
+
   const isLiked = likes[project.id] ?? project.isLiked ?? false;
   const isBookmarked = bookmarks[project.id] ?? project.isBookmarked ?? false;
   const currentLikes = likeCounts[project.id] ?? project.likes;
   const currentBookmarks = bookmarkCounts[project.id] ?? project.saves;
+
+  // Check if project is in draft status
+  const isDraft = project.status === 'DRAFT';
 
   return (
     <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden hover:shadow-lg transition-all duration-300 group cursor-pointer">
@@ -173,25 +185,28 @@ export const InteractiveProjectCard: React.FC<ProjectCardProps> = ({
             </span>
           )}
         </div>
-        <div className="absolute top-3 right-3 flex gap-2">
-          <button 
-            onClick={handleBookmark}
-            disabled={loading[`bookmark-${project.id}`]}
-            className={`p-2 rounded-full transition-all duration-200 ${
-              isBookmarked 
-                ? 'bg-emerald-600 text-white' 
-                : 'bg-white/90 backdrop-blur-sm text-gray-600 hover:bg-white'
-            } ${loading[`bookmark-${project.id}`] ? 'animate-pulse' : ''}`}
-          >
-            <BookmarkPlus size={16} />
-          </button>
-          <button 
-            onClick={handleShare}
-            className="bg-white/90 backdrop-blur-sm p-2 rounded-full hover:bg-white transition-colors"
-          >
-            <Share2 size={16} className="text-gray-600" />
-          </button>
-        </div>
+        {/* Only show bookmark and share buttons if not draft */}
+        {!isDraft && (
+          <div className="absolute top-3 right-3 flex gap-2">
+            <button 
+              onClick={handleBookmark}
+              disabled={loading[`bookmark-${project.id}`]}
+              className={`p-2 rounded-full transition-all duration-200 ${
+                isBookmarked 
+                  ? 'bg-emerald-600 text-white' 
+                  : 'bg-white/90 backdrop-blur-sm text-gray-600 hover:bg-white'
+              } ${loading[`bookmark-${project.id}`] ? 'animate-pulse' : ''}`}
+            >
+              <BookmarkPlus size={16} />
+            </button>
+            <button 
+              onClick={handleShare}
+              className="bg-white/90 backdrop-blur-sm p-2 rounded-full hover:bg-white transition-colors"
+            >
+              <Share2 size={16} className="text-gray-600" />
+            </button>
+          </div>
+        )}
       </div>
 
       {/* Content */}
@@ -259,9 +274,6 @@ export const InteractiveProjectCard: React.FC<ProjectCardProps> = ({
             <div>
               <p className="font-medium text-sm text-gray-900">{project.author}</p>
               <div className="flex items-center gap-2 text-xs text-gray-500">
-                <MapPin size={12} />
-                {project.location}
-                <span>•</span>
                 <Calendar size={12} />
                 {new Date(project.createdAt).toLocaleDateString('id-ID')}
               </div>
@@ -269,75 +281,64 @@ export const InteractiveProjectCard: React.FC<ProjectCardProps> = ({
           </div>
         </div>
 
-        {/* External Links */}
-        {(project.githubUrl || project.demoUrl) && (
-          <div className="flex gap-2 mb-4">
-            {project.githubUrl && (
-              <a
-                href={project.githubUrl}
-                target="_blank"
-                rel="noopener noreferrer"
-                onClick={(e) => e.stopPropagation()}
-                className="flex items-center gap-1 text-xs text-gray-600 hover:text-gray-900 bg-gray-50 px-2 py-1 rounded-full transition-colors"
-              >
-                <ExternalLink size={12} />
-                GitHub
-              </a>
-            )}
-            {project.demoUrl && (
-              <a
-                href={project.demoUrl}
-                target="_blank"
-                rel="noopener noreferrer"
-                onClick={(e) => e.stopPropagation()}
-                className="flex items-center gap-1 text-xs text-emerald-600 hover:text-emerald-700 bg-emerald-50 px-2 py-1 rounded-full transition-colors"
-              >
-                <ExternalLink size={12} />
-                Demo
-              </a>
-            )}
-          </div>
-        )}
-
         {/* Stats */}
         <div className="flex items-center justify-between pt-4 border-t border-gray-100">
-          <div className="flex items-center gap-2">
+          {/* Only show stats if not draft */}
+          {!isDraft ? (
+            <div className="flex items-center gap-2">
+              <button 
+                onClick={handleLike}
+                disabled={loading[`like-${project.id}`]}
+                className={`flex items-center gap-1 transition-all duration-200 ${
+                  isLiked 
+                    ? 'text-red-500' 
+                    : 'text-gray-500 hover:text-red-500'
+                } ${loading[`like-${project.id}`] ? 'animate-pulse' : ''}`}
+              >
+                <Heart 
+                  size={16} 
+                  className={isLiked ? 'fill-current' : ''}
+                />
+                <span className="text-sm font-medium">{currentLikes}</span>
+              </button>
+              <div className="flex items-center gap-1 text-gray-500">
+                <Eye size={16} />
+                <span className="text-sm">{project.views}</span>
+              </div>
+              <div className="flex items-center gap-1 text-gray-500">
+                <BookmarkPlus 
+                  size={16} 
+                  className={isBookmarked ? 'fill-current text-emerald-600' : ''}
+                />
+                <span className="text-sm">{currentBookmarks}</span>
+              </div>
+            </div>
+          ) : (
+            <div></div>
+          )}
+          
+          {/* Action button */}
+          {isDraft ? (
             <button 
-              onClick={handleLike}
-              disabled={loading[`like-${project.id}`]}
-              className={`flex items-center gap-1 transition-all duration-200 ${
-                isLiked 
-                  ? 'text-red-500' 
-                  : 'text-gray-500 hover:text-red-500'
-              } ${loading[`like-${project.id}`] ? 'animate-pulse' : ''}`}
+              onClick={handleEditProject}
+              className="bg-blue-50 text-blue-600 px-3 py-1.5 rounded-lg text-sm font-medium hover:bg-blue-100 transition-colors flex items-center gap-1"
+              data-testid="edit-project-button"
+              title={`Edit proyek ${project.title}`}
             >
-              <Heart 
-                size={16} 
-                className={isLiked ? 'fill-current' : ''}
-              />
-              <span className="text-sm font-medium">{currentLikes}</span>
+              Edit
+              <Edit size={14} />
             </button>
-            <div className="flex items-center gap-1 text-gray-500">
-              <Eye size={16} />
-              <span className="text-sm">{project.views}</span>
-            </div>
-            <div className="flex items-center gap-1 text-gray-500">
-              <BookmarkPlus 
-                size={16} 
-                className={isBookmarked ? 'fill-current text-emerald-600' : ''}
-              />
-              <span className="text-sm">{currentBookmarks}</span>
-            </div>
-          </div>
-          <button 
-            onClick={handleViewDetail}
-            className="bg-emerald-50 text-emerald-600 px-3 py-1.5 rounded-lg text-sm font-medium hover:bg-emerald-100 transition-colors flex items-center gap-1"
-            data-testid="lihat-detail-button"
-            title={`Lihat detail proyek ${project.title}`}
-          >
-            Lihat Detail
-            <ExternalLink size={14} />
-          </button>
+          ) : (
+            <button 
+              onClick={handleViewDetail}
+              className="bg-emerald-50 text-emerald-600 px-3 py-1.5 rounded-lg text-sm font-medium hover:bg-emerald-100 transition-colors flex items-center gap-1"
+              data-testid="lihat-detail-button"
+              title={`Lihat detail proyek ${project.title}`}
+            >
+              Lihat Detail
+              <ExternalLink size={14} />
+            </button>
+          )}
         </div>
       </div>
     </div>

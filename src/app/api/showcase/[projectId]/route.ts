@@ -1,4 +1,4 @@
-// app/api/showcase/[projectId]/route.ts (GET, PUT, DELETE specific project)
+// app/api/showcase/[projectId]/route.ts (GET, DELETE specific project)
 import prisma from '@/lib/prisma';
 import { NextRequest, NextResponse } from 'next/server';
 import jwt from 'jsonwebtoken';
@@ -141,9 +141,33 @@ export async function PUT(
     { params }: { params: { projectId: string } }
 ) {
     try {
+        // Get user ID from JWT token
+        const token = request.cookies.get('auth-token')?.value;
+        if (!token) {
+            return NextResponse.json(
+                { error: 'Authentication required' },
+                { status: 401 }
+            );
+        }
+
+        let userId: string;
+        try {
+            const decoded = jwt.verify(token, process.env.JWT_SECRET || 'your-secret-key');
+            if (typeof decoded === 'object' && decoded && 'userId' in decoded) {
+                userId = decoded.userId as string;
+            } else {
+                throw new Error('Invalid token structure');
+            }
+        } catch {
+            return NextResponse.json(
+                { error: 'Invalid authentication token' },
+                { status: 401 }
+            );
+        }
+
+        // Parse request body
         const body = await request.json();
         const {
-            userId,
             title,
             description,
             imageUrl,
@@ -151,8 +175,16 @@ export async function PUT(
             techTags,
             githubUrl,
             demoUrl,
-            status
+            status = 'PUBLISHED'
         } = body;
+
+        // Validate required fields
+        if (!title || !description) {
+            return NextResponse.json(
+                { error: 'Title and description are required' },
+                { status: 400 }
+            );
+        }
 
         // Verify project exists and user is the owner
         const existingProject = await prisma.showcaseProject.findUnique({
@@ -168,23 +200,23 @@ export async function PUT(
 
         if (existingProject.userId !== userId) {
             return NextResponse.json(
-                { error: 'Unauthorized - you can only edit your own projects' },
+                { error: 'Unauthorized - you can only update your own projects' },
                 { status: 403 }
             );
         }
 
-        // Update project
+        // Update the project
         const updatedProject = await prisma.showcaseProject.update({
             where: { id: params.projectId },
             data: {
-                title: title || existingProject.title,
-                description: description || existingProject.description,
-                imageUrl: imageUrl !== undefined ? imageUrl : existingProject.imageUrl,
-                sdgTags: sdgTags || existingProject.sdgTags,
-                techTags: techTags || existingProject.techTags,
-                githubUrl: githubUrl !== undefined ? githubUrl : existingProject.githubUrl,
-                demoUrl: demoUrl !== undefined ? demoUrl : existingProject.demoUrl,
-                status: status || existingProject.status,
+                title: title.trim(),
+                description: description.trim(),
+                imageUrl: imageUrl || existingProject.imageUrl,
+                sdgTags: Array.isArray(sdgTags) ? sdgTags : [],
+                techTags: Array.isArray(techTags) ? techTags : [],
+                githubUrl: githubUrl?.trim() || null,
+                demoUrl: demoUrl?.trim() || null,
+                status: status,
                 updatedAt: new Date(),
             },
             include: {
@@ -201,13 +233,15 @@ export async function PUT(
                     select: {
                         likes: true,
                         views: true,
-                        savedItems: true,
+                        savedItems: {
+                            where: { itemType: 'PROJECT' }
+                        },
                     },
                 },
             },
         });
 
-        // Transform response
+        // Transform the response to match the expected format
         const transformedProject = {
             id: updatedProject.id,
             title: updatedProject.title,
@@ -223,7 +257,7 @@ export async function PUT(
             sdgTags: updatedProject.sdgTags,
             techTags: updatedProject.techTags,
             description: updatedProject.description,
-            createdAt: updatedProject.createdAt.toISOString().split('T')[0],
+            createdAt: updatedProject.createdAt.toISOString(),
             featured: updatedProject.featured,
             aiMatchScore: updatedProject.aiMatchScore || 0,
             githubUrl: updatedProject.githubUrl,

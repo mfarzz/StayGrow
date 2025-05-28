@@ -10,12 +10,38 @@ import {
 import Image from "next/image";
 import { uploadFile } from "@/app/_hooks/useUpload";
 
+interface ShowcaseProject {
+  id: string;
+  title: string;
+  author: string;
+  authorRole?: string;
+  authorId: string;
+  location: string;
+  image: string;
+  avatarUrl?: string;
+  likes: number;
+  views: number;
+  saves: number;
+  sdgTags: string[];
+  techTags: string[];
+  description: string;
+  createdAt: string;
+  featured: boolean;
+  aiMatchScore: number;
+  githubUrl?: string;
+  demoUrl?: string;
+  status: string;
+  isLiked?: boolean;
+  isBookmarked?: boolean;
+}
+
 interface AddShowcaseModalProps {
   isOpen: boolean;
   onClose: () => void;
   onSubmit: (
     projectData: ShowcaseProjectData
   ) => Promise<{ success: boolean; project?: ShowcaseProjectData }>;
+  editingProject?: ShowcaseProject | null;
 }
 
 interface ShowcaseProjectData {
@@ -33,6 +59,7 @@ const AddShowcaseModal = ({
   isOpen,
   onClose,
   onSubmit,
+  editingProject,
 }: AddShowcaseModalProps) => {
   const [formData, setFormData] = useState<ShowcaseProjectData>({
     title: "",
@@ -56,6 +83,47 @@ const AddShowcaseModal = ({
   // Constants for file validation
   const MAX_FILE_SIZE = 5 * 1024 * 1024; // 5MB in bytes
   const ALLOWED_FILE_TYPES = ['image/jpeg', 'image/jpg', 'image/png', 'image/webp'];
+
+  // Check if we're in editing mode
+  const isEditMode = !!editingProject;
+
+  // Populate form when editing
+  useEffect(() => {
+    if (editingProject && isOpen) {
+      setFormData({
+        title: editingProject.title,
+        description: editingProject.description,
+        imageUrl: editingProject.image,
+        sdgTags: editingProject.sdgTags,
+        techTags: editingProject.techTags,
+        githubUrl: editingProject.githubUrl || "",
+        demoUrl: editingProject.demoUrl || "",
+        status: editingProject.status,
+      });
+      setImagePreview(editingProject.image);
+      setImageFile(null);
+      setImageError("");
+      setCurrentSDGInput("");
+      setCurrentTechInput("");
+    } else if (!editingProject && isOpen) {
+      // Reset form for new project
+      setFormData({
+        title: "",
+        description: "",
+        imageUrl: "",
+        sdgTags: [],
+        techTags: [],
+        githubUrl: "",
+        demoUrl: "",
+        status: "PUBLISHED",
+      });
+      setImagePreview("");
+      setImageFile(null);
+      setImageError("");
+      setCurrentSDGInput("");
+      setCurrentTechInput("");
+    }
+  }, [editingProject, isOpen]);
 
   const sdgOptions = [
     "SDG 1 - No Poverty",
@@ -215,6 +283,37 @@ const AddShowcaseModal = ({
     setIsLoading(true);
 
     try {
+      // Validation for publishing
+      if (formData.status === 'PUBLISHED') {
+        const validationErrors = [];
+
+        if (!formData.title || formData.title.trim().length < 5) {
+          validationErrors.push('Judul proyek harus minimal 5 karakter');
+        }
+
+        if (!formData.description || formData.description.trim().length < 50) {
+          validationErrors.push('Deskripsi proyek harus minimal 50 karakter');
+        }
+
+        if (!formData.imageUrl && !imageFile) {
+          validationErrors.push('Gambar proyek wajib diisi untuk publikasi');
+        }
+
+        if (!formData.sdgTags || formData.sdgTags.length === 0) {
+          validationErrors.push('Minimal satu SDG tag harus dipilih');
+        }
+
+        if (!formData.techTags || formData.techTags.length === 0) {
+          validationErrors.push('Minimal satu tech tag harus dipilih');
+        }
+
+        if (validationErrors.length > 0) {
+          alert(`Validasi gagal untuk publikasi:\n\n${validationErrors.join('\n')}\n\nSilakan lengkapi data yang diperlukan atau simpan sebagai draft terlebih dahulu.`);
+          setIsLoading(false);
+          return;
+        }
+      }
+
       let imageUrl = formData.imageUrl;
 
       // Upload image if file is selected
@@ -266,7 +365,7 @@ const AddShowcaseModal = ({
         {/* Header */}
         <div className="flex items-center justify-between p-6 border-b border-gray-200">
           <h2 className="text-2xl font-bold text-gray-900">
-            Submit Proyek Showcase
+            {isEditMode ? `Edit Proyek: ${editingProject?.title}` : "Submit Proyek Showcase"}
           </h2>
           <button
             onClick={onClose}
@@ -279,10 +378,26 @@ const AddShowcaseModal = ({
 
         {/* Form */}
         <form onSubmit={handleSubmit} className="p-6 space-y-6">
+          {/* Status - Show prominently for draft projects */}
+          {isEditMode && editingProject?.status === 'DRAFT' && (
+            <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
+              <div className="flex items-center gap-2 text-yellow-800">
+                <div className="w-2 h-2 bg-yellow-500 rounded-full"></div>
+                <span className="font-medium">Status: Draft</span>
+              </div>
+              <p className="text-sm text-yellow-700 mt-1">
+                Proyek ini masih dalam status draft dan tidak terlihat oleh publik.
+              </p>
+            </div>
+          )}
+
           {/* Title */}
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-2">
               Judul Proyek *
+              {formData.status === 'PUBLISHED' && (
+                <span className="text-xs text-gray-500 ml-1">(minimal 5 karakter untuk publikasi)</span>
+              )}
             </label>
             <input
               type="text"
@@ -290,15 +405,25 @@ const AddShowcaseModal = ({
               value={formData.title}
               onChange={handleInputChange}
               required
-              className="text-black w-full px-4 py-3 border border-gray-200 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 outline-none"
+              className={`text-black w-full px-4 py-3 border rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 outline-none ${
+                formData.status === 'PUBLISHED' && formData.title.length < 5 
+                  ? 'border-red-300 bg-red-50' 
+                  : 'border-gray-200'
+              }`}
               placeholder="Masukkan judul proyek yang menarik..."
             />
+            {formData.status === 'PUBLISHED' && formData.title.length > 0 && formData.title.length < 5 && (
+              <p className="text-xs text-red-500 mt-1">Judul harus minimal 5 karakter untuk publikasi</p>
+            )}
           </div>
 
           {/* Description */}
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-2">
               Deskripsi Proyek *
+              {formData.status === 'PUBLISHED' && (
+                <span className="text-xs text-gray-500 ml-1">(minimal 50 karakter untuk publikasi)</span>
+              )}
             </label>
             <textarea
               name="description"
@@ -306,17 +431,35 @@ const AddShowcaseModal = ({
               onChange={handleInputChange}
               required
               rows={4}
-              className="text-black w-full px-4 py-3 border border-gray-200 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 outline-none resize-none"
+              className={`text-black w-full px-4 py-3 border rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 outline-none resize-none ${
+                formData.status === 'PUBLISHED' && formData.description.length < 50 
+                  ? 'border-red-300 bg-red-50' 
+                  : 'border-gray-200'
+              }`}
               placeholder="Jelaskan proyek Anda, tujuan, dan dampak yang ingin dicapai..."
             />
+            {formData.status === 'PUBLISHED' && formData.description.length > 0 && formData.description.length < 50 && (
+              <p className="text-xs text-red-500 mt-1">Deskripsi harus minimal 50 karakter untuk publikasi</p>
+            )}
+            <p className="text-xs text-gray-500 mt-1">{formData.description.length} karakter</p>
           </div>
 
           {/* Image Upload */}
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-2">
-              Gambar Proyek
+              Gambar Proyek {isEditMode && "(Kosongkan jika tidak ingin mengubah)"}
+              {formData.status === 'PUBLISHED' && !isEditMode && (
+                <span className="text-red-500 ml-1">*</span>
+              )}
+              {formData.status === 'PUBLISHED' && (
+                <span className="text-xs text-gray-500 ml-1">(wajib untuk publikasi)</span>
+              )}
             </label>
-            <div className="border-2 border-dashed border-gray-300 rounded-lg p-6 text-center hover:border-emerald-400 transition-colors">
+            <div className={`border-2 border-dashed rounded-lg p-6 text-center hover:border-emerald-400 transition-colors ${
+              formData.status === 'PUBLISHED' && !formData.imageUrl && !imageFile
+                ? 'border-red-300 bg-red-50'
+                : 'border-gray-300'
+            }`}>
               {imagePreview ? (
                 <div className="relative">
                   <Image
@@ -330,7 +473,7 @@ const AddShowcaseModal = ({
                     type="button"
                     onClick={() => {
                       setImageFile(null);
-                      setImagePreview("");
+                      setImagePreview(isEditMode ? editingProject?.image || "" : "");
                     }}
                     className="absolute top-2 right-2 bg-red-500 text-white p-1 rounded-full hover:bg-red-600"
                   >
@@ -340,7 +483,9 @@ const AddShowcaseModal = ({
               ) : (
                 <>
                   <ImageIcon size={48} className="mx-auto text-gray-400 mb-2" />
-                  <p className="text-gray-600 mb-2">Upload gambar proyek</p>
+                  <p className="text-gray-600 mb-2">
+                    {isEditMode ? "Upload gambar baru" : "Upload gambar proyek"}
+                  </p>
                   <input
                     type="file"
                     accept="image/*"
@@ -377,6 +522,12 @@ const AddShowcaseModal = ({
             <label className="block text-sm font-medium text-gray-700 mb-2">
               <Target className="inline mr-1" size={16} />
               SDG yang Didukung
+              {formData.status === 'PUBLISHED' && (
+                <span className="text-red-500 ml-1">*</span>
+              )}
+              {formData.status === 'PUBLISHED' && (
+                <span className="text-xs text-gray-500 ml-1">(minimal 1 untuk publikasi)</span>
+              )}
             </label>
             <div className="flex gap-2 mb-3">
               <select
@@ -417,6 +568,9 @@ const AddShowcaseModal = ({
                 </span>
               ))}
             </div>
+            {formData.status === 'PUBLISHED' && formData.sdgTags.length === 0 && (
+              <p className="text-xs text-red-500 mt-1">Minimal satu SDG harus dipilih untuk publikasi</p>
+            )}
           </div>
 
           {/* Tech Tags */}
@@ -424,6 +578,12 @@ const AddShowcaseModal = ({
             <label className="block text-sm font-medium text-gray-700 mb-2">
               <Tag className="inline mr-1" size={16} />
               Teknologi yang Digunakan
+              {formData.status === 'PUBLISHED' && (
+                <span className="text-red-500 ml-1">*</span>
+              )}
+              {formData.status === 'PUBLISHED' && (
+                <span className="text-xs text-gray-500 ml-1">(minimal 1 untuk publikasi)</span>
+              )}
             </label>
             <div className="flex gap-2 mb-3">
               <input
@@ -486,6 +646,9 @@ const AddShowcaseModal = ({
                 </span>
               ))}
             </div>
+            {formData.status === 'PUBLISHED' && formData.techTags.length === 0 && (
+              <p className="text-xs text-red-500 mt-1">Minimal satu teknologi harus dipilih untuk publikasi</p>
+            )}
           </div>
 
           {/* Links */}
@@ -535,6 +698,11 @@ const AddShowcaseModal = ({
               <option value="PUBLISHED">Publikasikan Langsung</option>
               <option value="DRAFT">Simpan sebagai Draft</option>
             </select>
+            <p className="text-xs text-gray-500 mt-1">
+              {formData.status === 'DRAFT' 
+                ? "Draft tidak akan terlihat oleh publik dan tidak akan mendapat interaksi seperti like atau bookmark." 
+                : "Proyek yang dipublikasikan akan terlihat oleh semua pengguna dan dapat mendapat interaksi."}
+            </p>
           </div>
 
           {/* Actions */}
@@ -561,7 +729,7 @@ const AddShowcaseModal = ({
               {isLoading ? (
                 <>
                   <div className="animate-spin rounded-full h-5 w-5 border-t-2 border-b-2 border-white"></div>
-                  Menyimpan...
+                  {isEditMode ? "Menyimpan perubahan..." : "Menyimpan..."}
                 </>
               ) : isUploading ? (
                 <>
@@ -569,7 +737,7 @@ const AddShowcaseModal = ({
                   Mengupload...
                 </>
               ) : (
-                "Submit Proyek"
+                isEditMode ? "Simpan Perubahan" : "Submit Proyek"
               )}
             </button>
           </div>

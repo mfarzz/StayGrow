@@ -8,12 +8,15 @@ import {
   User,
   LogOut,
   X,
+  UserPlus,
+  Settings,
 } from "lucide-react";
 import { useState } from "react";
 import Link from "next/link"; // Import Link
 import { usePathname, useRouter } from "next/navigation"; // Import usePathname
 
 import { useNotification } from "../_hooks/useNotification"; // Assuming path is correct
+import { useAuth } from "../_hooks/useAuth";
 import Notification from "./notification"; // Assuming path is correct, or adjust
 
 // Interface for SidebarProps - activeTab and setActiveTab are removed
@@ -57,23 +60,48 @@ export default function Sidebar({
 }: SidebarProps) {
   const pathname = usePathname(); // Get current path
   const router = useRouter();
+  const { role } = useAuth();
   const { notification, showError, showSuccess, hideNotification } = useNotification();
   const [isLoggingOut, setIsLoggingOut] = useState(false);
 
-  const sidebarItems = [
+  // Base sidebar items
+  const baseSidebarItems = [
     // Adjusted to use href based on your app/(page)/home/* structure
     { id: "dashboard", href: "/home", icon: TrendingUp, label: "Dashboard" },
     { id: "opportunities", href: "/home/opportunities", icon: Briefcase, label: "Peluang" },
     { id: "mentorship", href: "/home/mentorship", icon: Users, label: "Mentorship" },
-    { id: "showcase", href: "/home/showcase", icon: Award, label: "Showcase" }, // Assuming /home/showcase
+    { id: "showcase", href: "/home/showcase", icon: Award, label: "Showcase" },
     { id: "profile", href: "/home/profile", icon: User, label: "Profil" },
   ];
+
+  // Add role-specific items
+  const sidebarItems = [...baseSidebarItems];
+  
+  // Add mentor application for PEMUDA users (hide for MENTOR users)
+  if (role === 'PEMUDA') {
+    sidebarItems.splice(-1, 0, {
+      id: "mentor-application",
+      href: "/home/mentor-application",
+      icon: UserPlus,
+      label: "Jadi Mentor"
+    });
+  }
+
+  // Add admin items for ADMIN users
+  if (role === 'ADMIN') {
+    sidebarItems.splice(-1, 0, { 
+      id: "admin-mentor-applications", 
+      href: "/home/admin/mentor-applications", 
+      icon: Settings, 
+      label: "Kelola Mentor" 
+    });
+  }
 
   const handleLogout = async () => {
     if (isLoggingOut) return;
     setIsLoggingOut(true);
     try {
-      const response = await fetch("/api/auth/logout", { // Ensure this API route exists
+      const response = await fetch("/api/auth/logout", { 
         method: "POST",
         headers: { "Content-Type": "application/json" },
       });
@@ -135,7 +163,7 @@ export default function Sidebar({
           <h2 className="text-lg font-semibold text-gray-900">Menu</h2>
           <button
             onClick={() => setIsMobileOpen(false)}
-            className="p-2 rounded-lg hover:bg-gray-100"
+            className="p-2 rounded-lg hover:bg-gray-100 text-gray-400"
           >
             <X size={20} />
           </button>

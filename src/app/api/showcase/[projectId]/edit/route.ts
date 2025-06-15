@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import jwt from 'jsonwebtoken';
 import prisma from '@/lib/prisma';
+import { moderateContent, getViolationMessage, moderateImageFilename } from '@/lib/content-moderation';
 
 export async function PUT(
   request: NextRequest,
@@ -101,10 +102,45 @@ export async function PUT(
 
       if (validationErrors.length > 0) {
         return NextResponse.json(
+          {
+            error: 'Validation failed for publishing',
+            message: `Proyek tidak dapat dipublikasi: ${validationErrors.join(', ')}`,
+            validationErrors
+          },
+          { status: 400 }
+        );
+      }
+    }
+
+    // Content moderation check (only check if title or description is being updated)
+    if (title || description) {
+      const titleToCheck = title || existingProject.title;
+      const descriptionToCheck = description || existingProject.description;
+      
+      const moderationResult = moderateContent(titleToCheck, descriptionToCheck);
+      
+      if (!moderationResult.isClean) {
+        const violationMessage = getViolationMessage(moderationResult);
+        return NextResponse.json(
           { 
-            error: 'Validasi gagal', 
-            validationErrors,
-            message: 'Proyek belum lengkap untuk dipublikasi. Silakan lengkapi data yang diperlukan.'
+            error: 'Content moderation failed',
+            message: violationMessage,
+            violations: moderationResult.violations,
+            severity: moderationResult.severity
+          },
+          { status: 400 }
+        );
+      }
+    }
+
+    // Image filename moderation (if new image is provided)
+    if (imageUrl && imageUrl !== existingProject.imageUrl) {
+      const filename = imageUrl.split('/').pop() || '';
+      if (!moderateImageFilename(filename)) {
+        return NextResponse.json(
+          { 
+            error: 'Image filename contains inappropriate content',
+            message: 'Nama file gambar mengandung konten yang tidak pantas. Silakan gunakan nama file yang lebih sopan.'
           },
           { status: 400 }
         );

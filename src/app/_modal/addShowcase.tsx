@@ -40,7 +40,14 @@ interface AddShowcaseModalProps {
   onClose: () => void;
   onSubmit: (
     projectData: ShowcaseProjectData
-  ) => Promise<{ success: boolean; project?: ShowcaseProjectData }>;
+  ) => Promise<{ 
+    success: boolean; 
+    project?: ShowcaseProjectData;
+    error?: string;
+    message?: string;
+    violations?: string[];
+    severity?: string;
+  }>;
   editingProject?: ShowcaseProject | null;
 }
 
@@ -79,6 +86,7 @@ const AddShowcaseModal = ({
   const [imagePreview, setImagePreview] = useState<string>("");
   const [imageError, setImageError] = useState("");
   const [isUploading, setIsUploading] = useState(false);
+  const [contentModerationError, setContentModerationError] = useState("");
   
   // Constants for file validation
   const MAX_FILE_SIZE = 5 * 1024 * 1024; // 5MB in bytes
@@ -105,6 +113,7 @@ const AddShowcaseModal = ({
       setImageError("");
       setCurrentSDGInput("");
       setCurrentTechInput("");
+      setContentModerationError("");
     } else if (!editingProject && isOpen) {
       // Reset form for new project
       setFormData({
@@ -122,6 +131,7 @@ const AddShowcaseModal = ({
       setImageError("");
       setCurrentSDGInput("");
       setCurrentTechInput("");
+      setContentModerationError("");
     }
   }, [editingProject, isOpen]);
 
@@ -178,6 +188,7 @@ const AddShowcaseModal = ({
       setImageError("");
       setCurrentSDGInput("");
       setCurrentTechInput("");
+      setContentModerationError("");
     }
   }, [isOpen]);
 
@@ -191,6 +202,11 @@ const AddShowcaseModal = ({
       ...prev,
       [name]: value,
     }));
+    
+    // Clear content moderation error when user starts typing
+    if (contentModerationError && (name === 'title' || name === 'description')) {
+      setContentModerationError("");
+    }
   };
 
   const handleImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -199,6 +215,7 @@ const AddShowcaseModal = ({
 
     // Reset previous errors
     setImageError("");
+    setContentModerationError("");
 
     // Validate file type
     if (!ALLOWED_FILE_TYPES.includes(file.type)) {
@@ -345,10 +362,17 @@ const AddShowcaseModal = ({
         setImageError("");
         setCurrentSDGInput("");
         setCurrentTechInput("");
+        setContentModerationError("");
         onClose();
+      } else if (result.error === 'content_moderation') {
+        // Handle content moderation errors from the new response structure
+        setContentModerationError(result.message || "Konten mengandung kata-kata yang tidak pantas. Silakan periksa dan perbaiki teks Anda.");
       }
     } catch (error) {
       console.error("Error submitting project:", error);
+      
+      // Fallback error handling for unexpected errors
+      setContentModerationError("Terjadi kesalahan saat memproses proyek. Silakan coba lagi.");
     } finally {
       setIsLoading(false);
     }
@@ -387,6 +411,19 @@ const AddShowcaseModal = ({
               </div>
               <p className="text-sm text-yellow-700 mt-1">
                 Proyek ini masih dalam status draft dan tidak terlihat oleh publik.
+              </p>
+            </div>
+          )}
+
+          {/* Content Moderation Error */}
+          {contentModerationError && (
+            <div className="bg-red-50 border border-red-200 rounded-lg p-4">
+              <div className="flex items-center gap-2 text-red-800">
+                <div className="w-2 h-2 bg-red-500 rounded-full"></div>
+                <span className="font-medium">Konten Tidak Sesuai</span>
+              </div>
+              <p className="text-sm text-red-700 mt-1">
+                {contentModerationError}
               </p>
             </div>
           )}

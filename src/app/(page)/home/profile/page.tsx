@@ -58,12 +58,13 @@ export default function ProfilePage() {
   // Fetch user's showcase projects on component mount
   useEffect(() => {
     if (profile?.id) {
-      // Fetch published projects
+      // Fetch published and flagged projects (user should see their flagged projects)
       fetchProjects({
         filter: "all",
         limit: 10,
         sortBy: "newest",
-        userId: profile.id
+        userId: profile.id,
+        status: "PUBLISHED,FLAGGED"
       });
       
       // Fetch draft projects
@@ -305,6 +306,18 @@ export default function ProfilePage() {
         return { success: true, project: updatedProject };
       } else {
         const errorData = await response.json();
+        
+        // Handle content moderation errors specifically
+        if (errorData.error === 'Content moderation failed' || errorData.error === 'Image filename contains inappropriate content') {
+          return {
+            success: false,
+            error: 'content_moderation',
+            message: errorData.message,
+            violations: errorData.violations,
+            severity: errorData.severity
+          };
+        }
+        
         throw new Error(errorData.message || `Failed to ${isEditing ? 'update' : 'create'} project`);
       }
     } catch (error) {
@@ -320,6 +333,16 @@ export default function ProfilePage() {
         showError(
           "Tidak dapat mengedit proyek",
           "Proyek yang sudah dipublikasi tidak dapat diedit. Hanya proyek dengan status draft yang dapat diubah."
+        );
+      } else if (error instanceof Error && error.message.includes('Content moderation failed')) {
+        showError(
+          "Konten tidak sesuai",
+          error.message
+        );
+      } else if (error instanceof Error && error.message.includes('Image filename contains inappropriate content')) {
+        showError(
+          "Nama file gambar tidak sesuai",
+          error.message
         );
       } else {
         showError(
@@ -486,7 +509,7 @@ export default function ProfilePage() {
                   ) : showcaseError ? (
                     <span className="text-red-500">Error</span>
                   ) : (
-                    `${(showcaseProjects?.length || 0)} total`
+                    `${(showcaseProjects?.length || 0)}`
                   )}
                 </span>
               </div>

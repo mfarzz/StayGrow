@@ -66,6 +66,10 @@ model User {
   projectLikes      ProjectLike[]
   projectViews      ProjectView[]
   mentorApplication MentorApplication?
+  
+  // Appeal relations
+  projectAppeals    ProjectAppeal[]
+  appealMessages    AppealMessage[]
 
   @@map("users")
 }
@@ -148,6 +152,7 @@ model ShowcaseProject {
   likes       ProjectLike[]
   views       ProjectView[]
   savedItems  SavedItem[]   // Projects can be saved by users
+  appeals     ProjectAppeal[] // Appeals for this project
 
   @@map("showcase_projects")
 }
@@ -226,4 +231,45 @@ model MentorApplication {
   updatedAt        DateTime                @updatedAt
 
   @@map("mentor_applications")
+}
+
+enum AppealStatus {
+  OPEN
+  IN_PROGRESS
+  RESOLVED
+  CLOSED
+}
+
+model ProjectAppeal {
+  id          String       @id @default(uuid())
+  userId      String
+  projectId   String
+  user        User         @relation(fields: [userId], references: [id])
+  project     ShowcaseProject @relation(fields: [projectId], references: [id])
+  reason      String       // User's reason for appeal
+  status      AppealStatus @default(OPEN)
+  assignedTo  String?      // Admin ID assigned to handle this appeal
+  resolvedAt  DateTime?    // When the appeal was resolved
+  resolution  String?      // Admin's resolution/decision
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+
+  // Relations
+  messages    AppealMessage[]
+
+  @@unique([userId, projectId]) // One appeal per user per project
+  @@map("project_appeals")
+}
+
+model AppealMessage {
+  id        String        @id @default(uuid())
+  appealId  String
+  senderId  String
+  appeal    ProjectAppeal @relation(fields: [appealId], references: [id], onDelete: Cascade)
+  sender    User          @relation(fields: [senderId], references: [id])
+  message   String
+  isAdminMessage Boolean   @default(false) // True if sent by admin
+  createdAt DateTime      @default(now())
+
+  @@map("appeal_messages")
 }

@@ -235,14 +235,14 @@ const AdminMentorApplicationsPage: React.FC = () => {
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                   <div className="space-y-3">
                     {application.currentPosition && (
-                      <div className="flex items-center gap-2 text-sm">
+                      <div className="flex items-center gap-2 text-sm text-black">
                         <Briefcase size={16} className="text-gray-400" />
                         <span>{application.currentPosition}</span>
                       </div>
                     )}
                     
                     {application.education && (
-                      <div className="flex items-center gap-2 text-sm">
+                      <div className="flex items-center gap-2 text-sm text-black">
                         <GraduationCap size={16} className="text-gray-400" />
                         <span>{application.education}</span>
                       </div>
@@ -328,8 +328,8 @@ const AdminMentorApplicationsPage: React.FC = () => {
                 <p className="text-sm text-gray-600 mb-2">
                   Anda akan {selectedStatus === 'APPROVED' ? 'menyetujui' : 'menolak'} pengajuan dari:
                 </p>
-                <p className="font-medium">{selectedApplication.user.name}</p>
-                <p className="text-sm text-gray-500">{selectedApplication.user.email}</p>
+                <p className="font-medium text-black">{selectedApplication.user.name}</p>
+                <p className="text-sm text-black">{selectedApplication.user.email}</p>
               </div>
 
               <div className="mb-6">
@@ -340,7 +340,7 @@ const AdminMentorApplicationsPage: React.FC = () => {
                   value={adminNotes}
                   onChange={(e) => setAdminNotes(e.target.value)}
                   placeholder={`Berikan catatan untuk ${selectedStatus === 'APPROVED' ? 'persetujuan' : 'penolakan'} ini...`}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500"
+                  className="text-black w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500"
                   rows={3}
                 />
               </div>

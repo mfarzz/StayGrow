@@ -42,6 +42,15 @@ interface ShowcaseProjectInput {
     status?: string;
 }
 
+interface CreateProjectResult {
+    success: boolean;
+    project?: ShowcaseProject;
+    error?: string;
+    message?: string;
+    violations?: string[];
+    severity?: string;
+}
+
 export default function useShowcase() {
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
@@ -56,6 +65,7 @@ export default function useShowcase() {
         limit = 9,
         sortBy = 'newest',
         userId = '', // Add userId parameter for filtering user's projects
+        status = 'PUBLISHED', // Add status parameter
     } = {}) => {
         setLoading(true);
         setError(null);
@@ -67,6 +77,7 @@ export default function useShowcase() {
             page: page.toString(),
             limit: limit.toString(),
             sortBy,
+            status,
         });
 
         // Add userId if provided
@@ -89,7 +100,7 @@ export default function useShowcase() {
         }
     }, []);
 
-    const createProject = useCallback(async (projectData: ShowcaseProjectInput) => {
+    const createProject = useCallback(async (projectData: ShowcaseProjectInput): Promise<CreateProjectResult> => {
         setLoading(true);
         setError(null);
 
@@ -103,7 +114,20 @@ export default function useShowcase() {
 
             const data = await res.json();
 
-            if (!res.ok) throw new Error(data.error || 'Failed to create project');
+            if (!res.ok) {
+                // Handle content moderation errors specifically
+                if (data.error === 'Content moderation failed' || data.error === 'Image filename contains inappropriate content') {
+                    return {
+                        success: false,
+                        error: 'content_moderation',
+                        message: data.message,
+                        violations: data.violations,
+                        severity: data.severity
+                    };
+                }
+                
+                throw new Error(data.error || 'Failed to create project');
+            }
 
             // Optional: refresh the list or add the new project
             return { success: true, project: data.project };

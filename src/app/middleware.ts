@@ -36,8 +36,15 @@ export function middleware(req: NextRequest) {
                 return NextResponse.redirect(new URL(DEFAULT_AUTHENTICATED_REDIRECT, req.url));
             }
             const response = NextResponse.next();
-            if (typeof decoded === 'object' && decoded && 'userId' in decoded) {
-                response.headers.set('x-user-id', String(decoded.userId));
+            if (typeof decoded === 'object' && decoded) {
+                // Set authentication headers that API endpoints expect
+                response.headers.set('x-user-authenticated', 'true');
+                if ('userId' in decoded) {
+                    response.headers.set('x-user-id', String(decoded.userId));
+                }
+                if ('role' in decoded) {
+                    response.headers.set('x-user-role', String(decoded.role));
+                }
             }
             return response;
 

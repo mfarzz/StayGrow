@@ -104,22 +104,30 @@ export async function GET(req: NextRequest) {
       }
     }
 
-    // Generate JWT token
+    // Generate JWT token dengan role
     const authToken = jwt.sign(
       {
         userId: user.id,
         email: user.email,
-        provider: user.provider
+        provider: user.provider,
+        role: user.role
       },
       process.env.JWT_SECRET || 'your-secret-key',
       { expiresIn: '7d' }
     );
 
-    // Create response and set cookie
-    const redirectUrl = state === 'register'
-      ? `${process.env.NEXTAUTH_URL}/home?welcome=true`
-      : `${process.env.NEXTAUTH_URL}/home`;
+    // Role-based redirection
+    let redirectUrl: string;
+    
+    if (user.role === 'ADMIN') {
+      redirectUrl = `${process.env.NEXTAUTH_URL}/admin/dashboard`;
+    } else {
+      redirectUrl = state === 'register'
+        ? `${process.env.NEXTAUTH_URL}/home?welcome=true`
+        : `${process.env.NEXTAUTH_URL}/home`;
+    }
 
+    // Create response and set cookie
     const response = NextResponse.redirect(redirectUrl);
 
     response.cookies.set('auth-token', authToken, {

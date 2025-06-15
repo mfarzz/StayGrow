@@ -20,7 +20,7 @@ export default function LoginPage() {
   const searchParams = useSearchParams();
   const error = searchParams.get("error");
 
-  const { isAuthenticated, loading } = useAuth();
+  const { isAuthenticated, loading, role } = useAuth();
   const router = useRouter();
 
   useEffect(() => {
@@ -41,9 +41,14 @@ export default function LoginPage() {
 
   useEffect(() => {
     if (!loading && isAuthenticated) {
-      router.push("/home");
+      // Role-based redirection for already authenticated users
+      if (role === 'ADMIN') {
+        router.push("/admin/dashboard");
+      } else {
+        router.push("/home");
+      }
     }
-  }, [loading, isAuthenticated, router]);
+  }, [loading, isAuthenticated, role, router]);
 
   // Di komponen login, tambahkan useEffect untuk mengambil email dari URL
 useEffect(() => {
@@ -121,8 +126,17 @@ useEffect(() => {
         return;
       }
 
+      const data = await response.json();
+      const userRole = data.user?.role;
+
       showSuccess("Login Berhasil", "Anda berhasil masuk ke akun Anda.");
-      router.push("/home");
+      
+      // Role-based redirection
+      if (userRole === 'ADMIN') {
+        router.push("/admin/dashboard");
+      } else {
+        router.push("/home");
+      }
     } catch (error) {
       console.error("Login error:", error);
       showError(

@@ -2,6 +2,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import jwt from 'jsonwebtoken';
 import prisma from '@/lib/prisma';
+import { moderateContent, getViolationMessage, moderateImageFilename } from '@/lib/content-moderation';
 
 export async function GET(request: NextRequest) {
   try {
@@ -15,7 +16,10 @@ export async function GET(request: NextRequest) {
     const limit = parseInt(searchParams.get('limit') || '9');
     const sortBy = searchParams.get('sortBy') || 'newest';
     const userId = searchParams.get('userId') || ''; // Add userId parameter
-    const status = searchParams.get('status') || 'PUBLISHED'; // Add status parameter
+    const statusParam = searchParams.get('status') || 'PUBLISHED'; // Add status parameter
+    
+    // Parse status parameter - can be single status or comma-separated statuses
+    const statuses = statusParam.split(',').map(s => s.trim()).filter(Boolean);
     
     // Get current user ID for liked/bookmarked filters
     let currentUserId: string | null = null;
@@ -37,7 +41,7 @@ export async function GET(request: NextRequest) {
     // Build where conditions
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const whereConditions: any = {
-      status: status, // Use the status parameter, defaults to 'PUBLISHED'
+      status: statuses.length === 1 ? statuses[0] : { in: statuses },
     };
 
     // Filter by specific user if userId is provided
@@ -104,11 +108,24 @@ export async function GET(request: NextRequest) {
       // Use raw SQL for better search capabilities with partial matching
       const searchPattern = `%${search.toLowerCase()}%`;
       
+      // Build status condition for SQL query
+      let statusCondition: string;
+      let params: (string | number | boolean)[];
+      
+      if (statuses.length === 1) {
+        statusCondition = 'sp.status = $2';
+        params = [searchPattern, statuses[0]];
+      } else {
+        const statusPlaceholders = statuses.map((_, index) => `$${index + 2}`).join(', ');
+        statusCondition = `sp.status IN (${statusPlaceholders})`;
+        params = [searchPattern, ...statuses];
+      }
+      
       // Build base SQL query
       let baseQuery = `
         FROM "showcase_projects" sp
         LEFT JOIN "users" u ON sp."userId" = u.id
-        WHERE sp.status = $2
+        WHERE ${statusCondition}
         AND (
           LOWER(sp.title) LIKE $1
           OR LOWER(sp.description) LIKE $1
@@ -122,8 +139,7 @@ export async function GET(request: NextRequest) {
         )
       `;
       
-      const params: (string | number | boolean)[] = [searchPattern, status];
-      let paramIndex = 3;
+      let paramIndex = statuses.length + 2;
       
       // Add additional filters
       if (userId) {
@@ -165,7 +181,7 @@ export async function GET(request: NextRequest) {
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const finalWhereConditions: any = {
           id: { in: projectIds },
-          status: status,
+          status: statuses.length === 1 ? statuses[0] : { in: statuses },
         };
         
         // Apply user-specific filters
@@ -370,6 +386,36 @@ export async function POST(request: NextRequest) {
                 { error: 'Missing required fields: title, description' },
                 { status: 400 }
             );
+        }
+
+        // Content moderation check
+        const moderationResult = moderateContent(title, description);
+        
+        if (!moderationResult.isClean) {
+            const violationMessage = getViolationMessage(moderationResult);
+            return NextResponse.json(
+                { 
+                    error: 'Content moderation failed',
+                    message: violationMessage,
+                    violations: moderationResult.violations,
+                    severity: moderationResult.severity
+                },
+                { status: 400 }
+            );
+        }
+
+        // Image filename moderation (if image exists)
+        if (imageUrl) {
+            const filename = imageUrl.split('/').pop() || '';
+            if (!moderateImageFilename(filename)) {
+                return NextResponse.json(
+                    { 
+                        error: 'Image filename contains inappropriate content',
+                        message: 'Nama file gambar mengandung konten yang tidak pantas. Silakan gunakan nama file yang lebih sopan.'
+                    },
+                    { status: 400 }
+                );
+            }
         }
 
         // Verify user exists

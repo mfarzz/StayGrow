@@ -91,7 +91,7 @@ export default function Sidebar({
   if (role === 'ADMIN') {
     sidebarItems.splice(-1, 0, { 
       id: "admin-mentor-applications", 
-      href: "/home/admin/mentor-applications", 
+      href: "/admin/mentor-applications", 
       icon: Settings, 
       label: "Kelola Mentor" 
     });
